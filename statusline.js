@@ -1,11 +1,9 @@
 #!/usr/bin/env node
 // Claude Code status line.
 //
-//   ◆ Opus 5 │ user@host:~/proj ⎇ main │ ctx ██░░░░░░░░ 21% │ cache 42m 94% │ 5h 40% (2h10m) pace 80% │ week 12% (4d3h) pace 60%
+//   ◆ Opus 5 │ user@host:~/proj ⎇ main │ ctx ██░░░░░░░░ 21% │ 5h 40% (2h10m) pace 80% │ week 12% (4d3h) pace 60%
 //
 //   ctx    context window used
-//   cache  prompt cache: time until the cached prefix expires, session hit
-//          ratio. "cache cold 95k" once expired: tokens the next prompt re-bills.
 //   5h     the five-hour quota window: used %, time until reset, pace
 //   week   the 7-day quota window: same
 //
@@ -43,14 +41,6 @@ const NOMINAL = { five_hour: 5 * 3600, seven_day: 7 * 86400 };
 // The seven_day header matches the /usage cadence exactly, so no correction.
 // Set to 0 if `/usage` ever shows the same reset time as the raw header.
 const RESET_SKEW = { five_hour: -3600 };
-// Prompt cache. The countdown goes yellow when less than CACHE_WARN_FRACTION of
-// the TTL is left; the hit ratio is dim at or above CACHE_HIT_WARN, yellow down
-// to CACHE_HIT_ALARM, red below. The ratio is cache-read tokens over all input
-// tokens this session, so it starts low and climbs; judge it after a few turns.
-const CACHE_TTL_S = { '5m': 300, '1h': 3600 };
-const CACHE_WARN_FRACTION = 0.15;
-const CACHE_HIT_WARN = 80;
-const CACHE_HIT_ALARM = 50;
 // Learned window lengths. Overridable so tests never touch the real file.
 const STATE_FILE = process.env.STATUSLINE_STATE ||
   path.join(os.homedir(), '.claude', 'statusline-windows.json');
@@ -93,9 +83,6 @@ const bar = (v) => {
   const f = Math.min(10, Math.max(0, Math.floor(((toInt(v) ?? 0) + 5) / 10)));
   return '█'.repeat(f) + '░'.repeat(10 - f);
 };
-
-// Token counts: "95k", "1.2M".
-const kTokens = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : `${Math.round(n / 1000)}k`);
 
 // Time until the reset: "6d20h" / "6h28m" / "45m" / "40s". Two units, because
 // flooring to one hides almost a day at "6d". The finer unit is dropped when zero.
@@ -174,34 +161,6 @@ const quota = (name, key) => {
   return s + paceTag(pace(key, w.used_percentage, resetsAt));
 };
 
-// --- prompt cache ------------------------------------------------------------
-// "cache 42m 94%" while the cached prefix is alive; "cache cold 95k" once it
-// has expired, where 95k is what the next prompt re-bills. Absent until the
-// session has actually seen caching. Claude Code re-runs the status line at
-// the expiry moment, so the flip to "cold" is on time even without a refresh
-// interval; the countdown itself only advances when the line is re-rendered.
-const cacheSeg = () => {
-  const c = data.prompt_cache;
-  if (!c || !c.caching_observed) return '';
-  let s = `${SEP}${label('cache')}`;
-  const exp = toInt(c.expires_at);
-  if (c.warm && exp != null && exp > NOW) {
-    const ttl = CACHE_TTL_S[c.ttl] ?? CACHE_TTL_S['5m'];
-    const col = exp - NOW < ttl * CACHE_WARN_FRACTION ? YEL : DIM;
-    s += ` ${col}${remaining(exp)}${RST}`;
-  } else {
-    const cold = Number(c.recache_tokens_if_cold);
-    s += ` ${YEL}cold${cold > 0 ? ` ${kTokens(cold)}` : ''}${RST}`;
-  }
-  const ratio = Number(c.hit_ratio);
-  if (c.hit_ratio != null && Number.isFinite(ratio)) {
-    const r = Math.round(ratio * 100);
-    const col = r >= CACHE_HIT_WARN ? DIM : r >= CACHE_HIT_ALARM ? YEL : RED;
-    s += ` ${col}${r}%${RST}`;
-  }
-  return s;
-};
-
 // --- identity: user@host:~/path ⎇ branch --------------------------------------
 const HOME = os.homedir();
 const where = HOME && CWD.startsWith(HOME) ? '~' + CWD.slice(HOME.length) : CWD;
@@ -224,7 +183,6 @@ try { user = os.userInfo().username; } catch {}
 let out = `${MAG}◆ ${MODEL}${RST}${SEP}${BGRN}${user}@${host}${RST}:${BBLU}${where}${RST}`;
 if (branch) out += ` ${GRY}⎇${RST} ${YEL}${branch}${RST}`;
 if (isPct(CTX)) out += `${SEP}${label('ctx')} ${pctColor(CTX)}${bar(CTX)} ${toInt(CTX)}%${RST}`;
-out += cacheSeg();
 out += quota('5h', 'five_hour');
 out += quota('week', 'seven_day');
 

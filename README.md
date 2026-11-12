@@ -4,13 +4,12 @@ A status line for [Claude Code](https://code.claude.com), kept in one place and
 installed onto every machine from this repo.
 
 ```
-◆ Opus 5 │ user@host:~/proj ⎇ main │ ctx ██░░░░░░░░ 21% │ cache 42m 94% │ 5h 40% (2h10m) pace 80% │ week 12% (4d3h) pace 60%
+◆ Opus 5 │ user@host:~/proj ⎇ main │ ctx ██░░░░░░░░ 21% │ 5h 40% (2h10m) pace 80% │ week 12% (4d3h) pace 60%
 ```
 
 | Segment | Meaning |
 |---|---|
 | `ctx` | context window used |
-| `cache` | time until the cached prefix expires, and the session hit ratio. Becomes `cache cold 95k` once expired — the tokens the next prompt re-bills. |
 | `5h` | the five-hour quota window: used %, time until reset, pace |
 | `week` | the 7-day quota window: same |
 
